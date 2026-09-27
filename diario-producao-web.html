@@ -71,7 +71,6 @@
     color: var(--ink-muted);
     font-size: 14px;
   }
-  
   .today-stamp{
     text-align: right;
     border: 1px solid var(--line-strong);
@@ -265,6 +264,8 @@
   .tag.retorno{ background: #EAF0EA; color: #4A6355; }
   .tag.endoscopia{ background: #F0E9EE; color: #6B4468; }
   .tag.colonoscopia{ background: #EDE6DA; color: #7A5A2E; }
+  .tag.polipo{ background: #E7EEF5; color: #3E5C86; }
+  .tag.mucosectomia{ background: #F5E9E5; color: #8A4A35; }
   .payer-col .conv-name{ color: var(--blue); }
   .payer-col .part-name{ color: #6B4A1E; }
   .qty-col{ color: var(--ink-faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
@@ -448,8 +449,10 @@
           <select id="f-procedure">
             <option value="consulta">Consulta</option>
             <option value="retorno">Retorno</option>
-            <option value="endoscopia">Endoscopia</option>
+            <option value="endoscopia">Endoscopia (EDA)</option>
             <option value="colonoscopia">Colonoscopia</option>
+            <option value="polipo">Pólipo</option>
+            <option value="mucosectomia">Mucosectomia</option>
           </select>
         </div>
         <div class="field">
@@ -477,9 +480,17 @@
           <label for="f-convenio-select">Convênio</label>
           <select id="f-convenio-select">
             <option value="Unimed">Unimed</option>
-            <option value="Cassi">Cassi</option>
-            <option value="Geap">Geap</option>
             <option value="Bradesco">Bradesco</option>
+            <option value="Hapvida">Hapvida</option>
+            <option value="Caixa">Caixa</option>
+            <option value="Camed">Camed</option>
+            <option value="Funasa">Funasa</option>
+            <option value="Cassi">Cassi</option>
+            <option value="Afrafep">Afrafep</option>
+            <option value="Geap">Geap</option>
+            <option value="Sulamerica">Sulamerica</option>
+            <option value="Fusex">Fusex</option>
+            <option value="Comseder">Comseder</option>
             <option value="Outro">Outro</option>
           </select>
         </div>
@@ -587,9 +598,9 @@
   // CONFIGURAÇÃO — preencha estes dois valores antes de publicar
   // ================================================================
   // 1) API_URL: a URL "/exec" que você recebe ao implantar o Apps Script como app da Web.
-  const API_URL = 'https://script.google.com/macros/s/AKfycbzOxkQ4fVaT9rXMU3BvyckggaLXYC6Y5Ce-yAUWW4zIDDVHzt4yzPwrVkyI-v8RPONUaQ/exec';
+  const API_URL = 'COLE_AQUI_A_URL_DO_SEU_APPS_SCRIPT';
   // 2) TOKEN: uma senha simples que você escolhe. Use o MESMO valor no arquivo Codigo.gs (variável TOKEN).
-  const TOKEN = 'CLARA-RAFAEL';
+  const TOKEN = 'TROQUE-ESTE-TOKEN-POR-ALGO-SECRETO';
   // ================================================================
 
   let entries = [];
@@ -602,14 +613,26 @@
   const todayISO = () => new Date().toLocaleDateString('sv-SE'); // yyyy-mm-dd, local time
   const uid = () => 'e' + Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 
-  const PROC_LABELS = { consulta:'Consulta', retorno:'Retorno', endoscopia:'Endoscopia', colonoscopia:'Colonoscopia' };
+  const PROC_LABELS = { consulta:'Consulta', retorno:'Retorno', endoscopia:'Endoscopia', colonoscopia:'Colonoscopia', polipo:'Pólipo', mucosectomia:'Mucosectomia' };
 
   const CONVENIO_VALORES = {
-    Unimed:   { consulta: 100 },
-    Cassi:    { consulta: 90 },
-    Geap:     { consulta: 104 },
-    Bradesco: { consulta: 131,50 }
+    Unimed:     { consulta: 100.00, endoscopia: 294.57, colonoscopia: 507.23, polipo: 982.41 },
+    Bradesco:   { consulta: 131.50, endoscopia: 450.00, colonoscopia: 500.00 },
+    Hapvida:    { endoscopia: 350.00, colonoscopia: 480.00 },
+    Caixa:      { consulta: 98.63,  endoscopia: 365.02, colonoscopia: 484.60 },
+    Camed:      { consulta: 97.64,  endoscopia: 352.00, colonoscopia: 524.71 },
+    Funasa:     { endoscopia: 414.98, colonoscopia: 511.61, mucosectomia: 892.00 },
+    Cassi:      { endoscopia: 429.61, colonoscopia: 429.61 },
+    Afrafep:    { consulta: 104.44, endoscopia: 280.97 },
+    Geap:       { consulta: 104.00, endoscopia: 427.19, colonoscopia: 535.50 },
+    Sulamerica: { consulta: 120.00 },
+    Fusex:      { endoscopia: 300.00, colonoscopia: 692.14 },
+    Comseder:   { endoscopia: 445.05 }
   };
+
+  // Valor particular (sem convênio): mesmo valor para consulta e endoscopia, por enquanto.
+  // Em caso de desconto, o valor pode ser ajustado manualmente no formulário (ex: R$ 350,00).
+  const PARTICULAR_VALORES = { consulta: 400.00, endoscopia: 400.00 };
 
   function parseDateBR(iso){
     const [y,m,d] = iso.split('-');
@@ -618,13 +641,19 @@
 
   // ---------- Storage (Google Apps Script + Planilha) ----------
   async function apiPost(action, payload){
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      // text/plain evita o preflight de CORS que o Apps Script não trata por padrão
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ token: TOKEN, action, ...payload })
-    });
-    return res.json();
+    try{
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        // text/plain evita o preflight de CORS que o Apps Script não trata por padrão
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ token: TOKEN, action, ...payload })
+      });
+      const data = await res.json();
+      if(data.error) return { ok: false, error: data.error };
+      return data;
+    }catch(err){
+      return { ok: false, error: 'conexão' };
+    }
   }
 
   async function loadEntries(){
@@ -695,6 +724,14 @@
     }
   }
 
+  function applyParticularPreset(){
+    if(isRetorno()) return;
+    const procedure = $('f-procedure').value;
+    if(PARTICULAR_VALORES[procedure] !== undefined){
+      $('f-valor-particular').value = PARTICULAR_VALORES[procedure];
+    }
+  }
+
   function resetForm(){
     $('f-date').value = todayISO();
     $('f-procedure').value = 'consulta';
@@ -708,6 +745,7 @@
     updateConvenioOutroVisibility();
     updateValorVisibility();
     applyConvenioPreset();
+    applyParticularPreset();
     editingId = null;
     $('btn-submit').textContent = 'Lançar atendimento';
     $('btn-cancel-edit').style.display = 'none';
@@ -754,27 +792,28 @@
     $('btn-submit').disabled = true;
     const entryData = { date, procedure, payment, convenio, valor, quantidade };
 
-    if(editingId){
-      const result = await apiPost('update', { id: editingId, entry: entryData });
-      $('btn-submit').disabled = false;
-      if(!result.ok){
-        $('form-msg').textContent = 'Erro ao salvar alteração. Tente novamente.';
-        return;
+    try{
+      if(editingId){
+        const result = await apiPost('update', { id: editingId, entry: entryData });
+        if(!result.ok){
+          $('form-msg').textContent = 'Erro ao salvar alteração (' + (result.error || 'desconhecido') + '). Verifique a API_URL/TOKEN e tente novamente.';
+          return;
+        }
+        const idx = entries.findIndex(e => e.id === editingId);
+        if(idx > -1) entries[idx] = { id: editingId, ...entryData };
+      } else {
+        const result = await apiPost('add', { entry: entryData });
+        if(!result.ok){
+          $('form-msg').textContent = 'Erro ao lançar atendimento (' + (result.error || 'desconhecido') + '). Verifique a API_URL/TOKEN e tente novamente.';
+          return;
+        }
+        entries.push(result.entry);
       }
-      const idx = entries.findIndex(e => e.id === editingId);
-      if(idx > -1) entries[idx] = { id: editingId, ...entryData };
-    } else {
-      const result = await apiPost('add', { entry: entryData });
+      renderAll();
+      resetForm();
+    } finally {
       $('btn-submit').disabled = false;
-      if(!result.ok){
-        $('form-msg').textContent = 'Erro ao lançar atendimento. Tente novamente.';
-        return;
-      }
-      entries.push(result.entry);
     }
-
-    renderAll();
-    resetForm();
   }
 
   function startEdit(id){
@@ -788,7 +827,7 @@
       $('f-qtd-particular').value = e.quantidade;
       $('f-valor-particular').value = e.valor;
     } else {
-      const known = ['Unimed','Cassi','Geap','Bradesco'];
+      const known = ['Unimed','Bradesco','Hapvida','Caixa','Camed','Funasa','Cassi','Afrafep','Geap','Sulamerica','Fusex','Comseder'];
       if(known.includes(e.convenio)){
         $('f-convenio-select').value = e.convenio;
         $('f-convenio-outro').value = '';
@@ -899,7 +938,7 @@
       byProc[e.procedure].count += e.quantidade;
       byProc[e.procedure].valor += e.valor * e.quantidade;
     });
-    const procOrder = ['consulta','retorno','endoscopia','colonoscopia'];
+    const procOrder = ['consulta','retorno','endoscopia','colonoscopia','polipo','mucosectomia'];
     $('r-by-procedure').innerHTML = procOrder
       .filter(p => byProc[p])
       .map(p => `
@@ -1003,7 +1042,7 @@
       byProc[e.procedure].count += e.quantidade;
       byProc[e.procedure].valor += e.valor * e.quantidade;
     });
-    const procOrder = ['consulta','retorno','endoscopia','colonoscopia'];
+    const procOrder = ['consulta','retorno','endoscopia','colonoscopia','polipo','mucosectomia'];
 
     const particular = filtered.filter(e => e.payment === 'particular');
     const convenios = {};
@@ -1094,9 +1133,9 @@
 
   // ---------- Wiring ----------
   document.querySelectorAll('.payment-toggle button').forEach(b => {
-    b.addEventListener('click', () => setPaymentKind(b.dataset.kind));
+    b.addEventListener('click', () => { setPaymentKind(b.dataset.kind); applyParticularPreset(); applyConvenioPreset(); });
   });
-  $('f-procedure').addEventListener('change', () => { updateValorVisibility(); applyConvenioPreset(); });
+  $('f-procedure').addEventListener('change', () => { updateValorVisibility(); applyConvenioPreset(); applyParticularPreset(); });
   $('f-convenio-select').addEventListener('change', () => { updateConvenioOutroVisibility(); applyConvenioPreset(); });
   $('btn-submit').addEventListener('click', handleSubmit);
   $('btn-cancel-edit').addEventListener('click', resetForm);
@@ -1121,6 +1160,7 @@
     updateConvenioOutroVisibility();
     updateValorVisibility();
     applyConvenioPreset();
+    applyParticularPreset();
     await loadEntries();
     applyPreset('mes');
     renderAll();
